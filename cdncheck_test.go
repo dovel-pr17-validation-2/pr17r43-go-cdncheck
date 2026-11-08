@@ -1,0 +1,99 @@
+package cdncheck
+
+import (
+	"net"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestCDNCheckValid tests that IP addresses and domain suffixes match their expected CDN/WAF providers.
+func TestCDNCheckValid(t *testing.T) {
+	client := New()
+
+	found, provider, itemType, err := client.Check(net.ParseIP("2400:cb00::1"))
+	require.Equal(t, "cloudflare", provider, "could not get correct provider")
+	require.Equal(t, "waf", itemType, "could not get correct item type")
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.True(t, found, "Could not check cloudlfare ip blacklist")
+
+	found, provider, itemType, err = client.Check(net.ParseIP("173.245.48.12"))
+	require.Equal(t, "cloudflare", provider, "could not get correct provider")
+	require.Equal(t, "waf", itemType, "could not get correct item type")
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.True(t, found, "Could not check cloudlfare ip blacklist")
+
+	found, _, _, err = client.Check(net.ParseIP("::1"))
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.False(t, found, "Localhost IP found in blacklist")
+
+	found, _, _, err = client.Check(net.ParseIP("127.0.0.1"))
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.False(t, found, "Localhost IP found in blacklist")
+
+	found, provider, itemType, err = client.Check(net.ParseIP("49.229.94.1"))
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.True(t, found, "could not match huawei cdn cidr")
+	require.Equal(t, "huawei", provider, "could not get correct provider")
+	require.Equal(t, "cdn", itemType, "could not get correct item type")
+
+	// Aliyun CDN
+	found, provider, itemType, err = client.Check(net.ParseIP("1.25.68.1"))
+	require.Nil(t, err)
+	require.True(t, found, "could not match aliyun cdn cidr")
+	require.Equal(t, "aliyun", provider)
+	require.Equal(t, "cdn", itemType)
+
+	// Wangsu CDN
+	found, provider, itemType, err = client.Check(net.ParseIP("1.71.150.1"))
+	require.Nil(t, err)
+	require.True(t, found, "could not match wangsu cdn cidr")
+	require.Equal(t, "wangsu", provider)
+	require.Equal(t, "cdn", itemType)
+
+	// Tencent Cloud CDN
+	found, provider, itemType, err = client.Check(net.ParseIP("1.56.98.1"))
+	require.Nil(t, err)
+	require.True(t, found, "could not match tencent cdn cidr")
+	require.Equal(t, "tencent", provider)
+	require.Equal(t, "cdn", itemType)
+
+	// F5 Distributed Cloud CDN / WAF
+	found, provider, itemType, err = client.Check(net.ParseIP("84.54.61.10"))
+	require.Nil(t, err)
+	require.True(t, found, "could not match f5 cidr")
+	require.Equal(t, "f5", provider)
+	require.Contains(t, []string{"cdn", "waf"}, itemType)
+
+	// Baidu Cloud CDN
+	found, provider, itemType, err = client.Check(net.ParseIP("1.56.80.1"))
+	require.Nil(t, err)
+	require.True(t, found, "could not match baidu cdn cidr")
+	require.Equal(t, "baidu", provider)
+	require.Equal(t, "cdn", itemType)
+
+	// Baidu Domain Suffix
+	found, provider, itemType, err = client.CheckSuffix("www.a.shifen.com")
+	require.Nil(t, err)
+	require.True(t, found, "could not match baidu shifen domain suffix")
+	require.Equal(t, "baidu", provider)
+	require.Equal(t, "waf", itemType)
+}
+
+func TestCheckGoogleCloudCustomerIPIsCloud(t *testing.T) {
+	client := New()
+
+	// A Compute Engine VM in a cloud.json range: Google Cloud, not the google CDN.
+	found, provider, itemType, err := client.Check(net.ParseIP("34.67.190.20"))
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.True(t, found, "could not match google cloud cidr")
+	require.Equal(t, "google", provider, "could not get correct provider")
+	require.Equal(t, "cloud", itemType, "a google cloud customer ip must not match as cdn")
+
+	// A Google front end outside cloud.json stays in the google CDN.
+	found, provider, itemType, err = client.Check(net.ParseIP("142.250.80.46"))
+	require.Nil(t, err, "Could not check ip in ranger")
+	require.True(t, found, "could not match google cdn cidr")
+	require.Equal(t, "google", provider, "could not get correct provider")
+	require.Equal(t, "cdn", itemType, "could not get correct item type")
+}
